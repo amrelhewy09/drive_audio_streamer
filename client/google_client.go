@@ -134,3 +134,9 @@ func (d *DriveClient) Stream(id string, start int64, end int64) (io.ReadCloser, 
 	}
 	return resp.Body, nil
 }
+
+func logResponse(resp *http.Response) {
+	file, _ := os.OpenFile("http.log", os.O_CREATE|os.O_WRONLY, 0644)
+	defer file.Close()
+	file.WriteString(fmt.Sprintf("Response: %v", resp))
+}
