@@ -42,7 +42,7 @@ func (r *AudioPlayer) Play(item *gui.Item, guiPlayer *gui.Gui) {
 				return
 			default:
 				end := start + bufferSize
-				if end < item.Size {
+				if end > item.Size {
 					end = item.Size
 				}
 
