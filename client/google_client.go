@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -77,7 +78,7 @@ func createConfig() *oauth2.Config {
 	return config
 }
 
-func handleCallback(w http.ResponseWriter, r *http.Request) {
+func handleCallback(w http.ResponseWriter, r *http.Request, cancel context.CancelFunc) {
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		http.Error(w, "Code not found", http.StatusBadRequest)
@@ -85,14 +86,15 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprintf(w, "Authorization code: %v\n", code)
+
+	cancel()
 }
 
 func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
 	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
 	fmt.Printf("Go to the following link in your browser then type the authorization code: \n%v\n", authURL)
 
-	http.HandleFunc("/callback", handleCallback)
-	go http.ListenAndServe(":8080", nil)
+	go bootServerForAuthCode()
 
 	var authCode string
 	if _, err := fmt.Scan(&authCode); err != nil {
@@ -135,8 +137,22 @@ func (d *DriveClient) Stream(id string, start int64, end int64) (io.ReadCloser, 
 	return resp.Body, nil
 }
 
-func logResponse(resp *http.Response) {
-	file, _ := os.OpenFile("http.log", os.O_CREATE|os.O_WRONLY, 0644)
-	defer file.Close()
-	file.WriteString(fmt.Sprintf("Response: %v", resp))
+func bootServerForAuthCode() {
+	ctx, cancel := context.WithCancel(context.Background())
+	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+		handleCallback(w, r, cancel)
+	})
+	server := &http.Server{Addr: ":8080"}
+	go cancelContext(ctx, server)
+	server.ListenAndServe()
+
+}
+
+func cancelContext(ctx context.Context, server *http.Server) {
+	<-ctx.Done()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
 }
